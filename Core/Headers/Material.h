@@ -19,6 +19,7 @@ public:
 
 	std::string m_tag{};
 	void old_material_use(const glm::mat4& projection, const glm::mat4& view, const glm::mat4& model, glm::vec3 viewPosition);
+	void use();
 	void addTexture(const std::shared_ptr<Texture>& texture);
 	
 	void sendShaderInput(const std::string &name, float value);

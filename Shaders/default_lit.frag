@@ -96,7 +96,7 @@ void main()
 	float distanceToViewer = length(viewDir);
 	viewDir = normalize(viewDir);
 
-	if (u_cullBackface && dot(norm, viewDir) <= 0.0) {
+	if (u_cullBackface && dot(norm, viewDir) >= 0.0) {
 		discard;
 	}
 

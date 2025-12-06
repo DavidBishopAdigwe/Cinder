@@ -7,7 +7,7 @@
 
 
 template <typename T>
-class Vec2
+struct Vec2
 {
 
 public:

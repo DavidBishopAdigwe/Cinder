@@ -8,7 +8,7 @@
 
 
 template <typename T>
-class Vec4
+struct Vec4
 {
 
 public:

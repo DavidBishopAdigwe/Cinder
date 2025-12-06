@@ -108,9 +108,9 @@ void Engine::init(GLFWwindow*& window)
 
 
 	//loadModel("C:/Users/PC/Downloads/backpack/backpack.obj", "Bag", "lit", Vec3f(0.0f, 1.0f, 7.0f));
-	loadModel("c:/users/pc/desktop/c++/glscene/models/Chest_LowPoly.obj", "Chest", "default", Vec3f(0.0f, 10.0f, 0.0f), Vec3f(5.0f));
+	//loadModel("c:/users/pc/desktop/c++/glscene/models/Chest_LowPoly.obj", "Chest", "default", Vec3f(0.0f, 10.0f, 0.0f), Vec3f(5.0f));
 
-	for (int i = 1; i < 2; ++i)
+	for (int i = 1; i < 10; ++i)
 	{
 		createCube("cube", "container",
 			cubePositions[i], 20.0f * i,
@@ -118,14 +118,16 @@ void Engine::init(GLFWwindow*& window)
 			Vec3f(2.0f));
 	}
 
-	for (int i = 0; i < 1;++i) {
-		createPointLight("PointLight" + std::to_string(i), 500.0f ,Vec3f(pointLightPositions[i].x, pointLightPositions[i].y, pointLightPositions[i].z));
+	for (int i = 0; i < 4;++i) {
+	createPointLight("PointLight" + std::to_string(i), 500.0f ,Vec3f(pointLightPositions[i].x, pointLightPositions[i].y, pointLightPositions[i].z));
 
 	}
 
 
-	createFloor();
+	//createFloor();
 	createDirectionalLight("DirectionalLight", Vec3f(0.0f, -10.0f, 5.0f));
+	createDirectionalLight("DirectionalLight", Vec3f(0.0f, -5.0f, 5.0f));
+
 
 	// TODO: change scene creation
 
@@ -150,59 +152,39 @@ void Engine::sRendering()
 		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	}
 
-	for (auto e : m_currentScene.getEntities())
+	glm::vec3 cameraPosition = camera.getPosition();
+	glm::mat4 projectionMat = camera.getProjectionMatrix();
+	glm::mat4 viewMat = camera.getViewMatrix();
+	glm::mat4 vpMat = projectionMat * viewMat;
+	for (auto& [name, shader] : shaders)
 	{
-		if (e.hasComponent<MeshRenderer>() && e.hasComponent<Transform>())
-		{
-			auto& cTransform = e.getComponent<Transform>();
-			auto& cRenderer = e.getComponent<MeshRenderer>();
 
-			cRenderer.sendShaderInput("u_cullBackface", cullBackface);
-			cRenderer.sendShaderInput("u_ViewDirection", camera.getDirection());
-			cRenderer.render(camera, cTransform);
+		m_currentScene.illuminate(shader);
+		m_currentScene.applyLightCountsToShader(shader);
+
+		shader->setUniformVec3("u_CameraPosition", cameraPosition);
+		shader->setUniformMat4("u_ProjectionMatrix", projectionMat);
+		shader->setUniformMat4("u_ViewMatrix", viewMat);
+		shader->setUniformMat4("u_VPMatrix", vpMat);
+
+		shader->setUniformi("u_cullBackface", cullBackface);
+		shader->setUniformVec3("u_ViewDirection", camera.getDirection());
+
+		for (auto& entity : m_currentScene.getEntities())
+		{
+			shader->setUniformMat4("u_MVPMatrix", vpMat * entity->getTransformMatrix());
+			entity->render(shader);
 		}
 	}
 
-	sendGeneralShaderUniforms();
+
 }
 
 void Engine::sLighting()
 {
-	for (auto e: m_currentScene.getEntities())
-	{
-		if (e.hasComponent<PointLight>())
-		{
-			auto& pointLight = e.getComponent<PointLight>();
-			auto& transform = e.getComponent<Transform>();
-
-			for (auto ent: m_currentScene.getEntities())
-			{
-				if (ent.hasComponent<MeshRenderer>() && e != ent)
-				{
-					auto& renderer = ent.getComponent<MeshRenderer>();
-					pointLight.use(renderer, transform);
-				}
-			}
-
-		}
-		if (e.hasComponent<DirectionalLight>())
-		{
-			auto& directionalLight = e.getComponent<DirectionalLight>();
-
-			for (auto ent: m_currentScene.getEntities())
-			{
-				if (ent.hasComponent<MeshRenderer>() && !e.hasComponent<PointLight>())
-				{
-					auto& renderer = ent.getComponent<MeshRenderer>();
-					directionalLight.use(renderer, e.getComponent<Transform>());
-				}
-			}
-		}
-	}
-
 	for (auto &shader: shaders | std::views::values)
 	{
-		m_currentScene.applyLightCountsToShader(*shader);
+		
 	}
 
 }
@@ -251,7 +233,7 @@ void Engine::imguiUse()
 	entityNames.reserve(m_currentScene.getEntities().size());
 	for (auto& e : m_currentScene.getEntities())
 	{
-		entityNames.push_back(e.getTag().c_str());
+		entityNames.push_back(e->tag.c_str());
 	}
 
 	std::vector<const char*> materialNames{};
@@ -267,61 +249,11 @@ void Engine::imguiUse()
 		if (ImGui::BeginTabItem("Entities"))
 		{
 			static int entityIndex{};
-
-			static float entityPosition[3]{};
-			static float entityScale[3]{};
-			static float entityRotationAxis[3]{};
-			static float entityRotationAngle{};
 			ImGui::Combo("Entities", &entityIndex, entityNames.data(), static_cast<int>(entityNames.size()));
 			if (entityIndex >= 0 && !m_currentScene.getEntities().empty())
 			{
 				auto& currentEntity = m_currentScene.getEntities()[entityIndex];
-				auto& entityTransform = currentEntity.getComponent<Transform>();
-				for (int index = 0; index <= 2; ++index)
-				{
-					entityPosition[index] = entityTransform.getPosition()[index];
-					entityScale[index] = entityTransform.getScale()[index];
-					entityRotationAxis[index] = entityTransform.getRotationAxis()[index];
-				}
-				entityRotationAngle = entityTransform.getRotationAngle();
-
-				ImGui::DragFloat3("Position", entityPosition);
-				ImGui::DragFloat("Rotation Angle", &entityRotationAngle);
-				ImGui::DragFloat3("Rotation Axis", entityRotationAxis);
-				ImGui::DragFloat3("Scale", entityScale);
-
-				entityTransform.rotate(entityRotationAngle, Vec3f(entityRotationAxis[0], entityRotationAxis[1], entityRotationAxis[2]));
-				entityTransform.setPosition(Vec3f(entityPosition[0], entityPosition[1], entityPosition[2]));
-				entityTransform.setScale(Vec3f(entityScale[0], entityScale[1], entityScale[2]));
-
-				if (currentEntity.hasComponent<PointLight>())
-				{
-					static float pConstant{};
-					static float pLinear{};
-					static float pQuadratic{};
-					static float pointColor[3];
-					auto& point = currentEntity.getComponent<PointLight>();
-
-					for (int i = 0; i < 3; ++i)
-					{
-						pointColor[i] = point.m_color[i];
-					}
-
-					pConstant = point.m_constant;
-					pLinear = point.m_linear;
-					pQuadratic = point.m_quadratic;
-
-					ImGui::DragFloat("Constant", &pConstant);
-					ImGui::DragFloat("Linear", &pLinear);
-					ImGui::DragFloat("Quadratic", &pQuadratic);
-					ImGui::ColorEdit3("Light Color", pointColor);
-
-					point.m_constant = pConstant;
-					point.m_linear = pLinear;
-					point.m_quadratic = pQuadratic;
-
-					point.m_color = Vec3f(pointColor[0], pointColor[1], pointColor[2]);
-				}
+				m_currentScene.imguiUse(currentEntity);
 			}
 
 
@@ -451,58 +383,36 @@ void Engine::createGrid()
 
 void Engine::createFloor()
 {
-	Old_Entity floor = m_currentScene.addEntity("Floor");
-	floor.addComponent<MeshRenderer>(materials["floor"], meshes["plane"]);
-	floor.addComponent<Transform>(Vec3f(0.0f), 0.0f, Vec3f(1.0f,0.0f, 0.0f), Vec3f(50.0f));
 }
 
-void Engine::createSpotLight()
-{
-	Old_Entity light = m_currentScene.addEntity("Spot Light");
-	light.addComponent<MeshRenderer>(materials["unlit"], meshes["cube"]);
-	light.addComponent<Transform>(Vec3f(camera.getPosition().x, camera.getPosition().y, camera.getPosition().z));
-	light.addComponent<SpotLight>(Vec3f(camera.getDirection().x, camera.getDirection().y, camera.getDirection().z), glm::cos(glm::radians(12.5f)), glm::cos(glm::radians(17.5f)));
-}
 
 void Engine::sendGeneralShaderUniforms()
 {
-	glm::mat4 projectionMat = camera.getProjectionMatrix();
-	glm::mat4 viewMat = camera.getViewMatrix();
-	glm::mat4 vpMat = projectionMat * viewMat;
-	for (auto& [name, shader] : shaders)
-	{
-		shader->setUniformMat4("u_ProjectionMatrix", projectionMat);
-		shader->setUniformMat4("u_ViewMatrix", viewMat);
-		shader->setUniformMat4("u_VPMatrix", vpMat);
-	}
+	
 }
 
 void Engine::createPointLight(const std::string& name, float radius, Vec3f position)
 {
-	Old_Entity light = m_currentScene.addPointLight(name, radius, position);
-	light.addComponent<MeshRenderer>(materials["unlit"], meshes["cube"]);
+	auto* light = m_currentScene.createEntity<PointLight>(name, radius);
+	light->setPosition(position);
 }
 
 void Engine::createDirectionalLight(const std::string& name, Vec3f direction)
 {
-	Old_Entity light = m_currentScene.addDirLight(name, direction);
+	auto* light = m_currentScene.createEntity<DirectionalLight>(name, direction);
 }
 
 void Engine::createCube(const std::string& name, const char* materialName, Vec3f position, float rotationAngle, Vec3f rotationAxis,
                         Vec3f scale)
 {
-	Old_Entity cube = m_currentScene.addEntity(name);
-	cube.addComponent<MeshRenderer>(materials[materialName], meshes["cube"]);
-	cube.addComponent<Transform>(position, rotationAngle, rotationAxis, scale);
+	auto* cube = m_currentScene.createEntity<MeshEntity>("Cube", meshes["cube"], materials[materialName]);
+	cube->setPosition(position);
+	cube->setRotation(rotationAxis, rotationAngle);
+	cube->setScale(scale);
 }
 
 void Engine::loadModel(const char* path, const char* tag, const char* materialName, Vec3f position, Vec3f scale, float angle, Vec3f rotAxis)
 {
-	Old_Entity model = m_currentScene.addEntity(tag);
-	auto& transform = model.addComponent<Transform>(position);
-	transform.rotate(angle, rotAxis);
-	transform.setScale(scale);
-	model.addComponent<MeshRenderer>(materials[materialName], path);
 
 }
 

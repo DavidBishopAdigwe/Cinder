@@ -14,6 +14,8 @@
 
 // New entity includes
 #include "imgui.h"
+#include <string>
+#include <cmath>
 
 class Scene;
 class Old_Entity;
@@ -38,19 +40,26 @@ protected:
 
 public:
 
+	std::string tag{"Unnamed"};
 	Vec3f getPosition() { return m_position;}
 	Vec3f getRotationAxis() { return m_currentRotationAxis; }
 	float getRotationAngle() { return m_currentRotationAngle; }
 
-	Vec3f setPosition(Vec3f pos) { m_position = pos; }
-	Vec3f setPosition(float p) { m_position = Vec3f(p); }
+	void setPosition(Vec3f pos) { m_position = pos; }
+	void setPosition(float p) { m_position = Vec3f(p); }
 
 
 	void setRotation(Vec3f axis, float angle);
 
 	virtual void imguiDraw();
 	// TODO: In spirit of generalization, add gizmos(?)
-	virtual void render() = 0;
+	virtual glm::mat4 getTransformMatrix() {
+		glm::mat4 modelMatrix{ 1.0f };
+		modelMatrix = glm::translate(modelMatrix, static_cast<glm::vec3>(getPosition()));
+		modelMatrix = glm::rotate(modelMatrix, glm::radians((getRotationAngle())), static_cast<glm::vec3>(getRotationAxis()));
+		return modelMatrix;
+	};
+	virtual void render(const std::shared_ptr<Shader>& shader) { shader->setUniformMat4("u_ModelMatrix", getTransformMatrix()); }
 };
 
 class MeshEntity : public Entity {
@@ -66,219 +75,98 @@ private:
 
 public:
 	Vec3f getScale() { return m_scale; }
-	Vec3f setScale(Vec3f scale) { m_scale = scale; }
-	Vec3f setScale(float s) { m_scale = Vec3f(s); }
+	void setScale(Vec3f scale) { m_scale = scale; }
+	void setScale(float s) { m_scale = Vec3f(s); }
 
 	virtual void imguiDraw() override;
-	virtual void render() override;
+	virtual glm::mat4 getTransformMatrix() override;
+	virtual void render(const std::shared_ptr<Shader>& shader) override;
 };
 
-template <typename T>
-concept ComponentConcept = std::derived_from<T, Component>;
-class EntityMemoryPool{
-
-	friend Old_Entity;
-	friend Scene;
-
-	static size_t m_maxEntities;
-
-	size_t currentComponentID{};
-	std::vector<std::string> m_entityTags{};
-	std::vector<bool> m_entityActive{};
-	std::map<size_t, std::vector<Transform>> m_TransformMap{};
-	std::map<size_t, std::vector<MeshRenderer>> m_RendererMap{};
-	std::tuple<std::vector<Transform>,
-		std::vector<MeshRenderer>,
-		std::vector<Light>,
-		std::vector<PointLight>,
-		std::vector<SpotLight>,
-		std::vector<DirectionalLight>> m_pool;
-
-	std::unordered_map<std::string, size_t> components{};
-
-	static void init(size_t maxEntities)
-	{
-		m_maxEntities = maxEntities;
-		Instance();
-	}
-
-	EntityMemoryPool()
-	{
-		m_entityActive.reserve(m_maxEntities);
-		m_entityTags.reserve(m_maxEntities);
-
-		std::vector<Transform> cTransforms{};
-		cTransforms.reserve(m_maxEntities);
-		registerComponent<Transform>();
-
-		std::vector<MeshRenderer> cMeshRenderers{};
-		cMeshRenderers.reserve(m_maxEntities);
-		registerComponent<MeshRenderer>();
-
-
-		std::vector<Light> cLights{};
-		cLights.reserve(m_maxEntities);
-		registerComponent<Light>();
-
-		std::vector<DirectionalLight> cDirectionalLights{};
-		cDirectionalLights.reserve(m_maxEntities);
-		registerComponent<DirectionalLight>();
-
-		std::vector<SpotLight> cSpotLights{};
-		cSpotLights.reserve(m_maxEntities);
-		registerComponent<SpotLight>();
-
-		std::vector<PointLight> cPointLights{};
-		cPointLights.reserve(m_maxEntities);
-		registerComponent<PointLight>();
-
-
-		for (size_t i = 0; i < m_maxEntities; i++)
-		{
-			m_entityActive.emplace_back();
-			m_entityTags.emplace_back();
-
-			cTransforms.emplace_back();
-			cMeshRenderers.emplace_back();
-			cLights.emplace_back();
-			cDirectionalLights.emplace_back();
-			cSpotLights.emplace_back();
-			cPointLights.emplace_back();
-		}
-
-		m_pool = std::tuple{cTransforms, cMeshRenderers, cLights, cPointLights, cSpotLights, cDirectionalLights};
-	}
-
-	template <ComponentConcept T>
-	void registerComponent()
-	{
-		auto typeName = typeid(T).name();
-		// TODO: loop over components
-		if (!components.contains(typeName))
-		{
-			components.insert({typeName, currentComponentID});
-			currentComponentID++;
-		}
-	}
-
-	void addEntity(const size_t id, const std::string& tag)
-	{
-		m_entityTags[id] = tag;
-		m_entityActive[id] = true;
-	}
-
-	void removeEntity(size_t id)
-	{
-		m_entityActive[id] = false;
-	}
-
-	size_t getAvailableId()
-	{
-		size_t nextIndex{};
-		for (size_t i = 0; i < m_maxEntities; i++)
-		{
-			if (m_entityActive[i]) continue;
-			nextIndex = i;
-			break;
-
-		}
-		return nextIndex;
-	}
+class LightEntity : public Entity {
 
 
 public:
+	LightEntity(Vec3f color = Vec3f(1.0f), 
+				float intensity = 1.0f):	m_color(color),
+											m_intensity(intensity){}
+											
+	virtual ~LightEntity() = default;
+protected:
+	// Light ID in specific group, used for the index to send input to the light array in shaders
+	int m_lightID{};
+	Vec3f m_color{ 1.0f };
+	float m_intensity{ 1.0f };
 
-	static EntityMemoryPool& Instance()
-	{
-		static EntityMemoryPool instance{};
-		return instance;
-	}
-
-	template <typename T, typename... TArgs>
-	T& addComponent(int id, TArgs... args)
-	{
-		auto& component = std::get<std::vector<T>>(m_pool)[id];
- 		component = T(std::forward<TArgs>(args)...);
-		component.active = true;
-
-		return component;
-	}
-
-	template <typename T>
-	T& getComponent(int id)
-	{
-		return std::get<std::vector<T>>(m_pool)[id];
-	}
-
-
-};
-
-
-
-
-
-
-class Camera;
-
-class Old_Entity
-{
-	friend Scene;
-
-	Old_Entity() = default;
-	Old_Entity(size_t id): m_id(id)
-	{
-
-	}
-
-	size_t m_id{};
-	std::bitset<ECSConstants::MAX_COMPONENTS> componentBitset{};
-
-	[[nodiscard]] int getID() const;
 public:
-	[[nodiscard]] const std::string& getTag() const;
+	void setLightID(int id) { m_lightID = id; }
+	void setColor(Vec3f color) { m_color = color; }
+	Vec3f getColor() { return m_color; }
 
-	// TODO: Add error checking, component does not exist
-	template <typename T, typename... TArgs>
-	T& addComponent(TArgs&&... args)
-	{
-		return EntityMemoryPool::Instance().addComponent<T>(m_id, std::forward<TArgs>(args)...);
-	}
-
-
-	template <typename T>
-	T& getComponent() const
-	{
-		auto& component = EntityMemoryPool::Instance().getComponent<T>(m_id);
-		return component;
-	}
-
-
-
-	template <typename T>
-	bool hasComponent() const
-	{
-		return getComponent<T>().active;
-	}
-
-
-	void destroy()
-	{
-		EntityMemoryPool::Instance().removeEntity(m_id);
-	}
-
-	bool operator== (const Old_Entity rhs) const
-	{
-		return m_id == rhs.m_id;
-	}
-
-	bool operator!=(const Old_Entity rhs) const
-	{
-		return !(operator==(rhs));
-	}
-
-
-
-
-
+	virtual void imguiDraw() override;
+	virtual void use(const std::shared_ptr<Shader>& shader) {};
 };
 
+class DirectionalLight : public LightEntity {
+public:
+	DirectionalLight(Vec3f direction = Vec3f(0.0f, 1.0f, 0.0f),
+					 Vec3f color = Vec3f(1.0f), 
+					 float intensity = 1.0f): LightEntity(color, intensity), 
+											  m_direction(direction) {}
+	Vec3f m_direction{};
+	static int m_lightCountByType;
+
+	virtual void imguiDraw() override;
+	virtual void use(const std::shared_ptr<Shader>& shader) override;
+	
+};
+
+class PointLight : public LightEntity {
+public:
+	PointLight(float attenuationRadius, 
+			   Vec3f color = Vec3f(1.0f),
+			   float intensity = 1.0f): LightEntity(color, intensity)
+	{
+		Vec3f attenuationValueSet = getAttenuationValues(attenuationRadius);
+		m_constant = attenuationValueSet.x;
+		m_linear = attenuationValueSet.y;
+		m_quadratic = attenuationValueSet.z;
+	}
+
+	float m_radius{};
+	float m_constant{};
+	float m_linear{};
+	float m_quadratic{};
+
+	Vec3f getAttenuationValues(float radius, float threshold = 0.01f, float ratio = 1.0f, float constant = 1.0f)
+	{
+		float reqQuotient = (1.0f / threshold) - 1.0f;
+
+		float quadratic = reqQuotient / ((ratio + 1.0f) * radius * radius);
+		float linear = ratio * quadratic * radius;
+
+		return Vec3f(constant, linear, quadratic);
+	}
+
+	static int m_lightCountByType;
+
+	virtual void imguiDraw() override;
+	virtual void use(const std::shared_ptr<Shader>& shader) override;
+};
+
+class SpotLight : public LightEntity {
+public:
+	SpotLight(Vec3f direction, float innerAngle, float outerAngle,
+			  Vec3f color = Vec3f(1.0f), float intensity = 1.0f): LightEntity(color, intensity),
+																  m_innerCutoff(innerAngle),
+																  m_outerCutoff(outerAngle){}
+
+	Vec3f m_direction{};
+	float m_innerCutoff{};
+	float m_outerCutoff;
+
+	static int m_lightCountByType;
+
+	virtual void imguiDraw() override;
+	virtual void use(const std::shared_ptr<Shader>& shader) override;
+};

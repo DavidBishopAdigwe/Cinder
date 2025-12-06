@@ -63,7 +63,7 @@ public:
 	std::map<std::string, std::shared_ptr<Material>> materials;
 	std::map<std::string, std::shared_ptr<Mesh>> meshes;
 
-	Scene m_currentScene{20};
+	Scene m_currentScene;
 
 	static bool cullBackface;
 	static bool drawWireframe;

@@ -1,7 +1,7 @@
 #include "Core/Headers/Material.h"
 
 
-void Material::old_material_use(const glm::mat4 &projection, const glm::mat4 &view, const glm::mat4 &model,
+[[deprecated]] void Material::old_material_use(const glm::mat4 &projection, const glm::mat4 &view, const glm::mat4 &model,
 	const glm::vec3 viewPosition)
 {
 	m_shader->use();
@@ -49,52 +49,60 @@ void Material::old_material_use(const glm::mat4 &projection, const glm::mat4 &vi
 	m_shader->setUniformMat4("u_ModelMatrix", model);
 	m_shader->setUniformMat4("u_MVPMatrix", projection * view * model);
 
-if (textureExists)
-{
-    int diffuseNr = 0;
-    int specularNr = 0;
-    int textureUnit = 0; 
-
-    for (int i = 0; i < (int)m_textures.size(); ++i)
-    {
-        auto& currentTex = m_textures[i];
-        std::string uniformStr;
-
-        if (currentTex->type == Texture::Diffuse)
-        {
-            uniformStr = "t_Diffuse[" + std::to_string(diffuseNr) + "]";
-            ++diffuseNr;
-        }
-        else if (currentTex->type == Texture::Specular)
-        {
-            uniformStr = "t_Specular[" + std::to_string(specularNr) + "]";
-            ++specularNr;
-        }
-        else
-        {
-            uniformStr = "t_Diffuse[" + std::to_string(diffuseNr) + "]";
-            ++diffuseNr;
-        }
-
-        m_shader->setUniformi(uniformStr.c_str(), textureUnit);
-
-        glActiveTexture(GL_TEXTURE0 + textureUnit);
-        currentTex->bind();  
-        ++textureUnit;
-    }
-
-    m_shader->setUniformi("u_DiffuseMapCount", diffuseNr);
-    m_shader->setUniformi("u_SpecularMapCount", specularNr);
-
-    glActiveTexture(GL_TEXTURE0);
-}
-
-	m_shader->setUniformVec3("u_CameraPosition", viewPosition);
 	
 }
 
 void Material::use()
 {
+	if (textureExists)
+	{
+		int diffuseNr = 0;
+		int specularNr = 0;
+		int textureUnit = 0;
+
+		for (int i = 0; i < (int)m_textures.size(); ++i)
+		{
+			auto& currentTex = m_textures[i];
+			std::string uniformStr;
+
+			switch (currentTex->type)
+			{
+
+			case Texture::Specular:
+				uniformStr = "t_Specular[" + std::to_string(specularNr) + "]";
+				++specularNr;
+				break;
+
+			case Texture::Diffuse:
+
+			default:
+				uniformStr = "t_Diffuse[" + std::to_string(diffuseNr) + "]";
+				++diffuseNr;
+				break;
+			}
+			m_shader->setUniformi(uniformStr.c_str(), textureUnit);
+
+			glActiveTexture(GL_TEXTURE0 + textureUnit);
+			currentTex->bind();
+			++textureUnit;
+		}
+
+		m_shader->setUniformi("u_DiffuseMapCount", diffuseNr);
+		m_shader->setUniformi("u_SpecularMapCount", specularNr);
+
+		glActiveTexture(GL_TEXTURE0);
+	}
+
+	m_shader->use();
+	
+	std::string materialUniformBase = "u_Material.";
+	m_shader->setUniformVec3((materialUniformBase + "albedo").c_str(), m_baseColor);
+	m_shader->setUniformf((materialUniformBase + "ambient").c_str(), m_ambientStrength);
+	m_shader->setUniformf((materialUniformBase + "diffuse").c_str(), m_diffuseStrength);
+	m_shader->setUniformf((materialUniformBase + "specular").c_str(), m_specularStrength);
+	m_shader->setUniformf((materialUniformBase + "shininess").c_str(), m_shininess);
+
+
 }
 
 void Material::addTexture(const std::shared_ptr<Texture>& texture)

@@ -1,18 +1,5 @@
 #include "Core/Headers/Entity.h"
 
- size_t EntityMemoryPool::m_maxEntities{};
-
-
-int Old_Entity::getID() const
-{
-	return m_id;
-}
-
-
-const std::string& Old_Entity::getTag() const
-{
-	return EntityMemoryPool::Instance().m_entityTags[m_id];
-}
 
 void Entity::setRotation(Vec3f axis, float angle)
 {
@@ -22,14 +9,10 @@ void Entity::setRotation(Vec3f axis, float angle)
 
 void Entity::imguiDraw()
 {
-	float imgui_Pos[3]{ m_position.x, m_position.y, m_position.z };
-	float imgui_RotAxis[3]{ m_currentRotationAxis.x, m_currentRotationAxis.y, m_currentRotationAxis.z };
-	float imgui_RotAngle = m_currentRotationAngle;
 
-
-	ImGui::DragFloat3("Position", imgui_Pos);
-	ImGui::DragFloat3("Rotation Axis", imgui_RotAxis);
-	ImGui::DragFloat("Angle", &imgui_RotAngle);
+	ImGui::DragFloat3("Position", &m_position.x, 0.5f);
+	ImGui::DragFloat3("Rotation Axis", &m_currentRotationAxis.x, 0.1f);
+	ImGui::DragFloat("Angle", &m_currentRotationAngle);
 
 }
 
@@ -42,19 +25,107 @@ MeshEntity::MeshEntity(const std::shared_ptr<Mesh> mesh, const std::shared_ptr<M
 void MeshEntity::imguiDraw()
 {
 	Entity::imguiDraw();
-	float imgui_Scale[3]{ m_scale.x, m_scale.y, m_scale.z };
 
-	ImGui::DragFloat3("Scale", imgui_Scale);
+	ImGui::DragFloat3("Scale", &m_scale.x);
 }
 
-void MeshEntity::render()
+glm::mat4 MeshEntity::getTransformMatrix()
 {
+	glm::mat4 modelMatrix{ 1.0f };
+	modelMatrix = glm::translate(modelMatrix, static_cast<glm::vec3>(getPosition()));
+	modelMatrix = glm::rotate(modelMatrix, glm::radians((getRotationAngle())), static_cast<glm::vec3>(getRotationAxis()));
+	modelMatrix = glm::scale(modelMatrix, static_cast<glm::vec3>(getScale()));
+	return modelMatrix;
+}
+
+void MeshEntity::render(const std::shared_ptr<Shader>& shader)
+{
+	Entity::render(shader);
 	for (auto& mat : m_materials)
 	{
+		mat->use();
 	}
-
+	
 	for (auto& mesh : m_meshes)
 	{
-
+		mesh->draw();
 	}
+}
+
+void DirectionalLight::imguiDraw()
+{
+	LightEntity::imguiDraw();
+	ImGui::DragFloat3("Light Direction", &m_direction.x);
+}
+
+void DirectionalLight::use(const std::shared_ptr<Shader>& shader)
+{
+	LightEntity::use(shader);
+	const std::string uniformStr{ "u_DirectionalLights[" + std::to_string(m_lightID) + "]." };
+
+	shader->setUniformVec3((uniformStr + "direction").c_str(), m_direction.getNormalized());
+	shader->setUniformVec3((uniformStr + "color").c_str(), m_color);
+	shader->setUniformf((uniformStr + "intensity").c_str(), m_intensity);
+}
+
+int DirectionalLight::m_lightCountByType{};
+int SpotLight::m_lightCountByType{};
+int PointLight::m_lightCountByType{};
+
+
+void LightEntity::imguiDraw()
+{
+	Entity::imguiDraw();
+	ImGui::ColorEdit3("Light Color", &m_color.x);
+	ImGui::DragFloat("Intensity", &m_intensity, 0.5f);
+}
+
+void PointLight::imguiDraw()
+{
+	LightEntity::imguiDraw();
+	if (ImGui::DragFloat("Attenuation Radius", &m_radius))
+	{
+		Vec3f attenuationValueSet = getAttenuationValues(m_radius);
+		m_constant = attenuationValueSet.x;
+		m_linear = attenuationValueSet.y;
+		m_quadratic = attenuationValueSet.z;
+	}
+}
+
+void PointLight::use(const std::shared_ptr<Shader>& shader)
+{
+	LightEntity::use(shader);
+	const std::string uniformStr{ "u_PointLights[" + std::to_string(m_lightID) + "]." };
+
+	shader->setUniformf((uniformStr + "constant").c_str(), m_constant);
+	shader->setUniformf((uniformStr + "linear").c_str(), m_linear);
+	shader->setUniformf((uniformStr + "quadratic").c_str(), m_quadratic);
+	shader->setUniformf((uniformStr + "intensity").c_str(), m_intensity);
+
+	shader->setUniformVec3((uniformStr + "color").c_str(), m_color);
+	shader->setUniformVec3((uniformStr + "position").c_str(), getPosition());
+}
+
+
+void SpotLight::imguiDraw()
+{
+	LightEntity::imguiDraw();
+	ImGui::DragFloat("Inner Radius", &m_innerCutoff);
+	ImGui::DragFloat("Outer Radius", &m_outerCutoff);
+
+}
+
+void SpotLight::use(const std::shared_ptr<Shader>& shader)
+{
+	LightEntity::use(shader);
+	const std::string uniformStr = "u_SpotLights[" + std::to_string(m_lightID) + "].";
+
+
+	shader->setUniformf((uniformStr + "innerCutoff").c_str(), m_innerCutoff);
+	shader->setUniformf((uniformStr + "outerCutoff").c_str(), m_outerCutoff);
+	shader->setUniformVec3((uniformStr + "color").c_str(), m_color);
+	shader->setUniformVec3((uniformStr + "direction").c_str(), m_direction.getNormalized());
+	shader->setUniformVec3((uniformStr + "position").c_str(), getPosition());
+	shader->setUniformf((uniformStr + "intensity").c_str(), m_intensity);
+
 }

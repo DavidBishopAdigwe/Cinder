@@ -53,7 +53,7 @@ out vec4 FragColor;
 float near = 0.1;
 float far = 10000.0;
 
-#define MAX_POINT_LIGHTS 1
+#define MAX_POINT_LIGHTS 5
 #define MAX_SPOT_LIGHTS 1
 #define MAX_DIR_LIGHTS 1
 
@@ -99,7 +99,7 @@ void main() {
 	vec3 norm = normalize(v_WorldNormal);
 	vec3 viewDir = normalize(u_CameraPosition - v_WorldPos);
 
-	if (u_cullBackface && dot(norm, viewDir) <= 0.0) {
+	if (u_cullBackface && dot(norm, viewDir) >= 0.0) {
 		discard;
 	}
 

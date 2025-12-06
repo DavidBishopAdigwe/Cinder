@@ -4,68 +4,75 @@
 #include "Core/Headers/Entity.h"
 #include "Math/Vec3.h"
 #include <Objects/Headers/Shader.h>
+#include <memory>
+#include <concepts>
+#include <type_traits>
+
+// TODO: Revisit later if issues arise
+template<typename T>
+concept isEntity = std::derived_from<T, Entity>;
+
+
 class Scene
 {
 public:
-	Scene(size_t maxEntitiesInScene);
-	
-
-private:
-
-	size_t m_totalEntities{};
-	std::vector<Old_Entity> m_entities{};
-	std::vector<Old_Entity> dirLightsInScene{};
-	std::vector<Old_Entity> pointLightsInScene{};
-	std::vector<Old_Entity> spotLightsInScene{};
-
-	int directionalLightCount{};
-	int pointLightCount{};
-	int spotLightCount{};
+	Scene() = default;;
 
 public:
-	Old_Entity addDirLight(const std::string& name, Vec3f direction = Vec3f(0.0f, -1.0f, 0.0f), Vec3f color = Vec3f(1.0f), float intensity = 1.0f);
-	Old_Entity addPointLight(const std::string& name, float radius, Vec3f position = Vec3f(0.0f), Vec3f color = Vec3f(1.0f), float intensity = 1.0f);
-	Old_Entity addSpotLight(const std::string& name, Vec3f position = Vec3f(0.0f), Vec3f direction = Vec3f(0.0f, -1.0f, 0.0f), float innerAngle = 0.0f, float outerAngle = 0.0f, Vec3f color = Vec3f(1.0f), float intensity = 1.0f );
 
-	void applyLightCountsToShader(Shader &shader);
+	size_t m_totalEntities{};
+	std::vector<std::unique_ptr<Entity>> m_entities{};
+	std::vector<LightEntity*> m_lights{};
+	std::vector<MeshEntity*> m_meshes{};
 
-	const std::vector<Old_Entity>& getEntities() const
+	template<typename T, typename... TArgs>
+		requires std::derived_from<T, Entity>
+	T* createEntity(const std::string& name, TArgs&&... args)
+	{
+		auto entity = std::make_unique<T>(std::forward<TArgs>(args)...);
+		entity->tag = name;
+		m_entities.push_back(std::move(entity));
+
+		auto* basePtr = m_entities.back().get();
+		T* typedPtr = static_cast<T*>(basePtr);
+		if constexpr (std::is_base_of_v<LightEntity, T>)
+		{
+			m_lights.push_back(static_cast<LightEntity*>(typedPtr));
+			// if m_lightCountByType is static on T:
+			typedPtr->setLightID(T::m_lightCountByType);
+			++T::m_lightCountByType;
+		}
+
+		if constexpr (std::is_base_of_v<MeshEntity, T>)
+		{
+			m_meshes.push_back(static_cast<MeshEntity*>(typedPtr));
+		}
+
+		return typedPtr;
+	}
+
+		
+	
+
+public:
+	
+	void imguiUse(const std::unique_ptr<Entity>& entity);
+	void applyLightCountsToShader(const std::shared_ptr<Shader>& shader);
+
+	void render(const std::shared_ptr<Shader>& shader);
+
+	const std::vector<std::unique_ptr<Entity>>& getEntities() const
 	{
 		return m_entities;
 	}
 
-	const std::vector<Old_Entity>& getDirLights() const
-	{
-		return dirLightsInScene;
-	}
-
-	const std::vector<Old_Entity>& getPointLights() const
-	{
-		return pointLightsInScene;
-	}
-
-	const std::vector<Old_Entity>& getSpotLights() const
-	{
-		return spotLightsInScene;
-	}
 	size_t getEntityCount() const
 	{
-		return m_totalEntities;
+		return m_entities.size();
 	}
 
-	int getDirectionalLightCount() const
-	{
-		return dirLightsInScene.size();
-	}
-	int getPointLightCount() const
-	{
-		return pointLightsInScene.size();
-	}
-
-	int getSpotLightCount() const
-	{
-		return spotLightsInScene.size();
-	}
-	Old_Entity addEntity(const std::string& name);
+	void illuminate(const std::shared_ptr<Shader>& shader);
 
 };
+
+ 
